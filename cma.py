@@ -37,10 +37,20 @@ CORRELATION = [
     [0.04, 0.06, 0.55, 0.47, 0.58, 0.58, 0.29, 1.0, 0.5],
     [-0.01, 0.01, 0.66, 0.68, 0.63, 0.63, 0.59, 0.5, 1.0]
 ]
+asset_names = list(STD_DEV.keys())
+COVARIANCE = np.array([
+    [
+        CORRELATION[i][j] * STD_DEV[asset_names[i]] * STD_DEV[asset_names[j]]
+        for j in range(len(asset_names))
+    ]
+    for i in range(len(asset_names))
+], dtype=float)
 
-COVARIANCE = [
-    [CORRELATION[i][j] * list(STD_DEV.values())[i] * list(STD_DEV.values())[j] for i in range(len(CORRELATION))] for j in range(len(CORRELATION))
-] 
+COVARIANCE = (COVARIANCE + COVARIANCE.T) / 2.0
+evals, evecs = np.linalg.eigh(COVARIANCE)
+evals = np.clip(evals, 1e-8, None)
+COVARIANCE = (evecs * evals) @ evecs.T
+COVARIANCE = (COVARIANCE + COVARIANCE.T) / 2.0
 
 BASE_SAA = {
     "cash" : 0.03,

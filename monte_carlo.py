@@ -80,7 +80,7 @@ class MonteCarloSim:
         self,
         num_paths: int,
         horizon: float,
-        days_per_year: int = 252,
+        points_per_year : int = 1,
         initial_prices: Optional[Sequence[float]] = None,
         seed: Optional[int] = None,
         return_prices: bool = True,
@@ -95,9 +95,9 @@ class MonteCarloSim:
         - `asset_names`: list of asset names
         """
         num_paths = int(num_paths)
-        days_per_year = int(days_per_year)
-        num_steps = int(round(float(horizon) * days_per_year))
-        dt = 1.0 / float(days_per_year)
+        points_per_year = int(points_per_year)
+        num_steps = int(round(float(horizon) * points_per_year))
+        dt = 1.0 / float(points_per_year)
 
         if seed is not None:
             np.random.seed(int(seed))
@@ -127,7 +127,7 @@ class MonteCarloSim:
         result: Dict[str, Any] = {
             "log_returns": increments,
             "simple_returns": simple_returns,
-            "times": np.arange(num_steps + 1) / float(days_per_year),
+            "times": np.arange(num_steps + 1) / float(points_per_year),
             "asset_names": list(self.asset_names),
         }
 
@@ -141,3 +141,24 @@ class MonteCarloSim:
 
         return result
 
+class SimpleMonteCarlo:
+
+    def __init__(
+        self,
+        portfolio_mean : float,
+        portfolio_var : float
+    ):
+
+        self.mean = portfolio_mean
+        self.variance = portfolio_var
+
+    def generate_paths(
+        self,
+        num_paths : int,
+        horizon : int,
+        points_per_year : int = 1,
+    ):
+        z = np.random.standard_normal((num_paths, horizon * points_per_year))
+        returns = (self.mean / points_per_year) + ((np.sqrt(points_per_year) * np.sqrt(self.variance)) * z)
+
+        return returns         

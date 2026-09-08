@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 import numpy as np
-from cma import RETURNS, STD_DEV, COVARIANCE, BASE_SAA, INTEREST_RATE, ASSET_ORDER, SCENARIO_DELTAS
+from cma import RETURNS, STD_DEV, COVARIANCE, BASE_SAA, INTEREST_RATE, ASSET_ORDER, SCENARIO_DELTAS, AUM
 from pension import Liabilities
-from monte_carlo import MonteCarloSim
+from monte_carlo import MonteCarloSim, SimpleMonteCarlo
 from math import sqrt
 
 @dataclass
@@ -135,16 +135,28 @@ class AssetAlloc:
 class Scenario:
     monte_carlo : MonteCarloSim
     horizon : float
-    dc : int
+    comp : int
 
-    def __init__(self, scenario : str = "base", horizon : float = 30.0, dc : int = 252):
+    def __init__(
+            self, 
+            scenario : str = "base", 
+            horizon : float = 30.0, 
+            dc : int = 1, 
+            mc_paths: int = 10000, 
+            scenario_deltas : dict | None = None
+        ):
+
         self.horizon = horizon
-        self.dc = dc
+        self.comp = dc
         self.paths = None
-        scenario_deltas = SCENARIO_DELTAS.get(scenario)
+        self._paths_horizon = None
+        self.mc_paths = mc_paths
 
         if scenario_deltas is None:
-            raise ValueError(f"Scenario {scenario} not recognized")
+            if scenario in SCENARIO_DELTAS:
+                scenario_deltas = SCENARIO_DELTAS.get(scenario)
+            else: 
+                raise ValueError(f"Scenario {scenario} not recognized")
 
         input_means = RETURNS.copy()
         for asset in input_means:
@@ -152,10 +164,13 @@ class Scenario:
 
         self.monte_carlo = MonteCarloSim(input_means, COVARIANCE, ASSET_ORDER)
 
-    def get_paths(self, num_paths: int = 1000, horizon: float = 30.0):
+    def get_paths(self, horizon: float | None = None):
+        if horizon is None:
+            horizon = self.horizon
 
-        if self.paths is None:
-            self.paths = self.monte_carlo.generate_paths(num_paths, horizon)
+        if self.paths is None or self._paths_horizon != horizon:
+            self.paths = self.monte_carlo.generate_paths(self.mc_paths, horizon, points_per_year=self.comp)
+            self._paths_horizon = horizon
 
         return self.paths
 
@@ -168,6 +183,14 @@ class Portfolio:
     def __init__(self, asset_alloc, liabilities):
         self.asset_alloc = asset_alloc
         self.liabilities = liabilities
+        self.scenarios = {}
+
+        for s in SCENARIO_DELTAS:
+            self.scenarios[s] = Scenario(s)
+    def add_scenario(self, name : str, deltas : dict):
+        if name in self.scenarios:
+            raise ValueError(f"Cannot add scenario with name {name} as it is already present")
+        self.scenarios[name] = Scenario(scenario=name, scenario_deltas=deltas)
 
     def run_scenario(self, scenario : str = "base") -> Scenario:
         if scenario in self.scenarios:
@@ -178,31 +201,110 @@ class Portfolio:
             return self.scenarios[scenario]
 
 
-    def get_var(self, ci : float = 0.95, scenario : str = "base"):
-        s = self.scenarios[scenario]
-        paths = s.get_paths(num_paths=10000, horizon=s.horizon)
+    def get_var(self, ci : float = 0.95, scenario : str = "base", horizon : int = 1):
+        s = self.run_scenario(scenario)
+        paths = s.get_paths(horizon=horizon)
 
-        # asset weights in the same order as the scenario output
         asset_names = paths["asset_names"]
-        weights = np.array([self.asset_alloc.weights[a] for a in asset_names], dtype=float)
+        weights = np.array([self.asset_alloc.weights.get(a, 0.0) for a in asset_names], dtype=float)
 
-        # final portfolio value relative to initial value
         initial_prices = paths["prices"][:, 0, :]
-        final_prices = paths["prices"][:, -1, :]
+        final_idx = int(round(horizon * s.comp))
+        final_prices = paths["prices"][:, final_idx, :]
 
-        # assumes initial portfolio value = 1.0
-        end_values = np.sum(weights * (final_prices / initial_prices), axis=1)
-        losses = 1.0 - end_values  # positive means a loss
+        weighted_returns = np.sum(
+            weights * (final_prices / initial_prices - 1.0),
+            axis=1,
+        )
 
-        return float(np.quantile(losses, ci))
+        worst_return = float(np.quantile(weighted_returns, 1.0 - ci))
+        return float(max(0.0, -worst_return) * AUM)
 
-    
+    def get_cvar(self, ci : float = 0.95, scenario : str = "base", horizon : int = 1):
+        s = self.run_scenario(scenario)
+        paths = s.get_paths(horizon=horizon)
+
+        asset_names = paths["asset_names"]
+        weights = np.array([self.asset_alloc.weights.get(a, 0.0) for a in asset_names], dtype=float)
+
+        initial_prices = paths["prices"][:, 0, :]
+        final_idx = int(round(horizon * s.comp))
+        final_prices = paths["prices"][:, final_idx, :]
+
+        weighted_returns = np.sum(
+            weights * (final_prices / initial_prices - 1.0),
+            axis=1,
+        )
+
+        var_return = float(np.quantile(weighted_returns, 1.0 - ci))
+        tail = weighted_returns[weighted_returns <= var_return]
+        if tail.size == 0:
+            return float(max(0.0, -var_return) * AUM)
+        return float(max(0.0, -np.mean(tail)) * AUM)
+
+    def _get_ptf_value(self, scenario : str = "base", horizon : float | None = None):
+        s = self.run_scenario(scenario)
+        if horizon is None:
+            horizon = s.horizon
+        paths = s.get_paths(horizon=horizon)
+
+        asset_names = paths["asset_names"]
+        weights = np.array([self.asset_alloc.weights.get(a, 0.0) for a in asset_names], dtype=float)
+
+        start_vals = AUM * weights
+
+        growth = paths["prices"] / paths["prices"][:, 0, :][:, None, :]
+        asset_vals = growth * start_vals[None, None, :]
+
+        ptf_value = asset_vals.sum(axis=2)
+
+        return ptf_value
+
+     
     def _get_funded_ratio(self, assets : float, t : int):
         l = self.liabilities.get_closing_liabilities(t)
         return assets / l
 
-    def underfunding_probability(self, scenario : str = "base"):
-        s = self.scenarios[scenario]
-        paths = s.get_paths()
+    def underfunding_probability(self, scenario : str = "base", horizon : float = 30.0):
+        s = self.run_scenario(scenario)
+        ptf_values = self._get_ptf_value(scenario, horizon=horizon)
+        final_idx = int(round(horizon * s.comp))
 
-        paths['prices'][:, -1, :]
+        l = self.liabilities.get_closing_liabilities(int(horizon))
+        final_vals = ptf_values[:, final_idx]
+
+        underfunded_cases = final_vals < l 
+        return float(np.mean(underfunded_cases))
+
+    
+    def funded_ratio_avg(self, scenario : str = "base", horizon : float = 30.0):
+        s = self.run_scenario(scenario)
+        ptf_value = self._get_ptf_value(scenario, horizon=horizon)
+        final_idx = int(round(horizon * s.comp))
+        funded_ratios = np.array([self._get_funded_ratio(a, int(horizon)) for a in ptf_value[:, final_idx]])
+
+        return np.mean(funded_ratios)
+        
+    def funded_ratio_vol(self, scenario : str = "base", horizon : float = 30.0):
+        s = self.run_scenario(scenario)
+        ptf_value = self._get_ptf_value(scenario, horizon=horizon)
+        final_idx = int(round(horizon * s.comp))
+
+        funded_ratios = np.array([self._get_funded_ratio(a, int(horizon)) for a in ptf_value[:, final_idx]])
+        return np.std(funded_ratios, ddof=1)
+
+    def portfolio_avg(self, scenario : str = "base", horizon : float | None = None):
+        s = self.run_scenario(scenario)
+        if horizon is None:
+            horizon = s.horizon
+        ptf_value = self._get_ptf_value(scenario, horizon=horizon)
+
+        return np.mean(ptf_value)
+
+    def portfolio_vol(self, scenario : str = "base", horizon : float | None = None):
+        s = self.run_scenario(scenario)
+        if horizon is None:
+            horizon = s.horizon
+        ptf_value = self._get_ptf_value(scenario, horizon=horizon)
+
+        return np.std(ptf_value, ddof=1)
