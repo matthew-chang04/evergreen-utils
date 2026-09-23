@@ -1,71 +1,71 @@
-import streamlit as st
-import plotly.express as px
+import os
+import sys
+
 import pandas as pd
-from portfolio import Asset, AssetAlloc, Portfolio
-from pension import Liabilities
-import cma
+import plotly.express as px
+import streamlit as st
 
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
-st.title("Strategic Asset Allocation")
+from frontend.session_state import ASSET_KEYS, ensure_app_state, build_portfolio
 
-# default allocation (sums to 1.0)
-DEFAULT_WEIGHTS = {
-	"cash": 0.03,
-	"fixed_income": 0.28,
-	"can_equity": 0.09,
-	"us_equity": 0.09,
-	"id_equity": 0.04,
-	"em_equity": 0.05,
-	"real_estate": 0.16,
-	"infrastructure": 0.13,
-	"private_equity": 0.13,
-}
+ensure_app_state()
 
-st.sidebar.header("Settings")
-horizon = st.sidebar.slider("Horizon (years)", min_value=1, max_value=50, value=30)
-mc_paths = st.sidebar.number_input("Monte Carlo paths", min_value=100, max_value=20000, value=5000, step=100)
+st.title("Allocation Research")
+st.caption("Build a target portfolio and keep it as the active benchmark for performance analytics.")
 
-st.header("Portfolio Composition")
-weights = DEFAULT_WEIGHTS.copy()
+weights = st.session_state.draft_weights.copy()
 
-df = pd.DataFrame({"asset": list(weights.keys()), "weight": list(weights.values())})
-fig = px.pie(df, values="weight", names="asset", title="Portfolio Allocation")
-st.plotly_chart(fig, use_container_width=True)
+st.subheader("Portfolio worksheet")
+with st.container():
+    updated = {}
+    for asset in ASSET_KEYS:
+        updated[asset] = st.slider(
+            asset.replace("_", " ").title(),
+            min_value=0.0,
+            max_value=1.0,
+            value=float(weights.get(asset, 0.0)),
+            step=0.01,
+            key=f"draft_{asset}",
+        )
 
-st.header("Key Metrics")
+    total = sum(updated.values())
+    if total > 0:
+        normalized = {key: value / total for key, value in updated.items()}
+    else:
+        normalized = {key: 0.0 for key in ASSET_KEYS}
 
-# build simple AssetAlloc and Portfolio
-assets = [(Asset(name=a), w) for a, w in weights.items()]
-alloc = AssetAlloc(assets)
-liab = Liabilities(
-	retired_members=cma.RETIRED_MEMBERS,
-	active_members=cma.ACTIVE_MEMBERS,
-	average_salary=cma.AVG_SALARY,
-	min_active_members=cma.MIN_ACTIVE_MEMBERS,
-	active_members_decline=cma.ACTIVE_MEMBER_DECLINE,
-	retired_members_growth=cma.RETIRED_MEMBERS_GROWTH,
-	wage_growth_rate=cma.WAGE_GROWTH,
-	starting_duration=cma.INITIAL_DURATION,
-	actuarial_df=cma.ACTUARIAL_DF,
-	service_cost=cma.SERVICE_COST_RATE,
-	starting_liabilities=cma.LIABILITIES,
-	starting_benefit=cma.STARTING_BENEFIT,
-	benefit_growth_rate=cma.BENEFIT_GROWTH_RATE,
-	liabilities_cache={},
-)
+    st.session_state.draft_weights = normalized
 
-ptf = Portfolio(alloc, liab)
+    st.write("Current target mix")
+    df = pd.DataFrame({"asset": list(normalized.keys()), "weight": list(normalized.values())})
+    fig = px.pie(df, values="weight", names="asset", title="Portfolio Allocation")
+    st.plotly_chart(fig, use_container_width=True)
 
-col1, col2, col3 = st.columns(3)
-with col1:
-	var = ptf.get_var(ci=0.95, horizon=1)
-	st.metric("VaR (95%, 1y)", f"${var:,.0f}")
-with col2:
-	cvar = ptf.get_cvar(ci=0.95, horizon=1)
-	st.metric("CVaR (95%, 1y)", f"${cvar:,.0f}")
-with col3:
-	sharpe = alloc.get_sharpe()
-	st.metric("Sharpe Ratio (ann.)", f"{sharpe:.2f}")
+    st.write("Weight summary")
+    st.dataframe(df.assign(weight=df["weight"].map(lambda x: f"{x:.2%}")), use_container_width=True)
+
+    if sum(normalized.values()) != 1.0:
+        st.warning("The worksheet weights are being normalized to sum to 100% before evaluation.")
+
+    if st.button("Set as benchmark portfolio"):
+        st.session_state.benchmark_weights = normalized.copy()
+        st.session_state.benchmark_name = "Custom benchmark"
+        st.success("This portfolio is now the benchmark used in the Performance Metrics tab.")
+
+    ptf, alloc, _ = build_portfolio(normalized)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        var = ptf.get_var(ci=0.95, horizon=1)
+        st.metric("VaR (95%, 1y)", f"${var:,.0f}")
+    with col2:
+        cvar = ptf.get_cvar(ci=0.95, horizon=1)
+        st.metric("CVaR (95%, 1y)", f"${cvar:,.0f}")
+    with col3:
+        sharpe = alloc.get_sharpe()
+        st.metric("Sharpe Ratio (ann.)", f"{sharpe:.2f}")
 
 st.markdown("---")
-st.info("Use the 'Performance' page to view Monte Carlo paths and liabilities over the selected horizon.")
+st.info("Switch to Performance Metrics to review the portfolio currently saved as the benchmark.")

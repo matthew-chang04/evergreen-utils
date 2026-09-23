@@ -1,9 +1,10 @@
 import numpy as np
 import pytest
 
-from cma import AUM
-from pension import Liabilities
-from portfolio import AssetAlloc, Cash, FixedIncome, Portfolio
+from assumptions.cma import AUM
+from portfolio.liabilities import Liabilities
+from portfolio.monte_carlo import MonteCarloSim
+from portfolio.portfolio import AssetAlloc, Cash, FixedIncome, Portfolio
 
 
 @pytest.fixture
@@ -73,3 +74,24 @@ def test_funded_ratio_uses_requested_horizon_for_simulation(portfolio, monkeypat
 
     assert seen["horizon"] == 10.0
     assert np.isfinite(result)
+
+
+def test_generate_paths_supports_simple_weighted_return_mode():
+    sim = MonteCarloSim(
+        means={"cash": 0.02, "fixed_income": 0.04},
+        cov=[[0.01, 0.0], [0.0, 0.04]],
+        asset_names=["cash", "fixed_income"],
+    )
+
+    paths = sim.generate_paths(
+        num_paths=250,
+        horizon=2,
+        points_per_year=1,
+        seed=42,
+        simple=True,
+        weights=[0.5, 0.5],
+    )
+
+    assert paths["simple_returns"].shape == (250, 2)
+    assert paths["portfolio_mean"] == pytest.approx(0.03)
+    assert paths["portfolio_variance"] == pytest.approx(0.0125)

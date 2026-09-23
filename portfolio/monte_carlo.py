@@ -1,33 +1,14 @@
-"""Monte Carlo return-path generator.
-
-This module exposes `MonteCarloSim`, a small generator focused purely on
-mathematical generation of correlated return paths (log-returns and
-simple returns) and optional price paths. It does not perform portfolio
-valuation or liability calculations — those belong in higher-level code
-(e.g. the `Scenario`/`Portfolio` objects).
-
-Usage:
-    sim = MonteCarloSim(means=..., cov=..., asset_names=...)
-    out = sim.generate_paths(num_paths=1000, horizon=30)
-
-Returned dictionary contains `log_returns`, `simple_returns`, `prices`,
-`times`, and `asset_names`.
-"""
-
-from typing import Optional, Sequence, Dict, Any, List
+from typing import Optional, Sequence, Dict, Any
 import numpy as np
 from scipy.linalg import cholesky
+from assumptions.cma import RETURNS, COVARIANCE
 
-try:
-    # default inputs if user doesn't pass means/cov
-    from cma import RETURNS, COVARIANCE
-except Exception:  # pragma: no cover - cma optional
-    RETURNS = None
-    COVARIANCE = None
+    
+    
 
 
 class MonteCarloSim:
-    """Generate correlated return paths using geometric Brownian motion.
+    """
 
     Parameters
     - means: mapping name->annual expected return (if None, tries to use cma.RETURNS)
@@ -76,23 +57,36 @@ class MonteCarloSim:
         self._L = cholesky(self.cov, lower=True)
         self.num_vars = len(self.asset_names)
 
+    def _portfolio_metrics(self, weights: Optional[Sequence[float]] = None):
+        if weights is None:
+            weights = np.full(self.num_vars, 1.0 / self.num_vars, dtype=float)
+        weights = np.asarray(weights, dtype=float)
+        if weights.shape[0] != self.num_vars:
+            raise ValueError("weights length must match number of assets")
+        total_weight = float(np.sum(weights))
+        if np.isclose(total_weight, 0.0):
+            raise ValueError("weights must sum to a non-zero value")
+        weights = weights / total_weight
+        portfolio_mean = float(weights @ self.means)
+        portfolio_variance = float(weights @ self.cov @ weights)
+        return weights, portfolio_mean, portfolio_variance
+
     def generate_paths(
         self,
         num_paths: int,
         horizon: float,
-        points_per_year : int = 1,
+        points_per_year: int = 1,
         initial_prices: Optional[Sequence[float]] = None,
         seed: Optional[int] = None,
         return_prices: bool = True,
+        simple: bool = False,
+        weights: Optional[Sequence[float]] = None,
     ) -> Dict[str, Any]:
-        """Generate correlated paths.
+        """Generate either full correlated asset paths or a simplified weighted-portfolio path.
 
-        Returns a dict with keys:
-        - `log_returns`: shape (num_paths, num_steps, num_vars) incremental log-returns
-        - `simple_returns`: shape (num_paths, num_steps, num_vars) = exp(log_returns)-1
-        - `prices` (optional): shape (num_paths, num_steps+1, num_vars)
-        - `times`: array of time points in years (length num_steps+1)
-        - `asset_names`: list of asset names
+        When `simple=True`, the simulation reduces to a single weighted portfolio return and
+        variance projected across the requested horizon. It returns `simple_returns` as a
+        2D array of shape (num_paths, num_steps), plus the aggregate portfolio mean/variance.
         """
         num_paths = int(num_paths)
         points_per_year = int(points_per_year)
@@ -101,6 +95,31 @@ class MonteCarloSim:
 
         if seed is not None:
             np.random.seed(int(seed))
+
+        if simple:
+            weight_vec, portfolio_mean, portfolio_variance = self._portfolio_metrics(weights)
+            z = np.random.standard_normal((num_paths, num_steps))
+            drift = portfolio_mean * dt
+            diffusion = np.sqrt(max(portfolio_variance * dt, 0.0))
+            simple_returns = drift + diffusion * z
+
+            result: Dict[str, Any] = {
+                "simple_returns": simple_returns,
+                "portfolio_mean": float(portfolio_mean),
+                "portfolio_variance": float(portfolio_variance),
+                "portfolio_std_dev": float(np.sqrt(max(portfolio_variance, 0.0))),
+                "times": np.arange(num_steps + 1) / float(points_per_year),
+                "asset_names": list(self.asset_names),
+                "weights": weight_vec,
+            }
+
+            if return_prices:
+                path_values = np.cumprod(np.clip(1.0 + simple_returns, 1e-12, None), axis=1)
+                prices = np.ones((num_paths, num_steps + 1), dtype=float)
+                prices[:, 1:] = path_values
+                result["prices"] = prices
+
+            return result
 
         if initial_prices is None:
             initial_prices = np.ones(self.num_vars, dtype=float)
@@ -139,6 +158,8 @@ class MonteCarloSim:
             prices[:, 1:, :] = initial_prices[None, None, :] * np.exp(cum_log)
             result["prices"] = prices
 
+
+        print(result["simple_returns"])
         return result
 
 class SimpleMonteCarlo:
@@ -149,8 +170,8 @@ class SimpleMonteCarlo:
         portfolio_var : float
     ):
 
-        self.mean = portfolio_mean
-        self.variance = portfolio_var
+        self.mean = float(portfolio_mean)
+        self.variance = float(portfolio_var)
 
     def generate_paths(
         self,
@@ -158,7 +179,11 @@ class SimpleMonteCarlo:
         horizon : int,
         points_per_year : int = 1,
     ):
-        z = np.random.standard_normal((num_paths, horizon * points_per_year))
-        returns = (self.mean / points_per_year) + ((np.sqrt(points_per_year) * np.sqrt(self.variance)) * z)
-
-        return returns         
+        num_paths = int(num_paths)
+        points_per_year = int(points_per_year)
+        steps = int(round(float(horizon) * points_per_year))
+        z = np.random.standard_normal((num_paths, steps))
+        drift = self.mean / float(points_per_year)
+        diffusion = np.sqrt(max(self.variance / float(points_per_year), 0.0))
+        returns = drift + diffusion * z
+        return returns

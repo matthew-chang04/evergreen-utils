@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 import numpy as np
-from cma import RETURNS, STD_DEV, COVARIANCE, BASE_SAA, INTEREST_RATE, ASSET_ORDER, SCENARIO_DELTAS, AUM
-from pension import Liabilities
-from monte_carlo import MonteCarloSim, SimpleMonteCarlo
+from assumptions.cma import RETURNS, STD_DEV, COVARIANCE, BASE_SAA, INTEREST_RATE, ASSET_ORDER, SCENARIO_DELTAS, AUM
+from portfolio.liabilities import Liabilities
+from portfolio.monte_carlo import MonteCarloSim, SimpleMonteCarlo
 from math import sqrt
 
 @dataclass
@@ -164,12 +164,16 @@ class Scenario:
 
         self.monte_carlo = MonteCarloSim(input_means, COVARIANCE, ASSET_ORDER)
 
-    def get_paths(self, horizon: float | None = None):
+    def get_paths(self, horizon: float | None = None, weights : np.ndarray | None = None):
         if horizon is None:
             horizon = self.horizon
 
+        if weights is None:
+            init_prices = None
+        else:
+            init_prices = weights * AUM
         if self.paths is None or self._paths_horizon != horizon:
-            self.paths = self.monte_carlo.generate_paths(self.mc_paths, horizon, points_per_year=self.comp)
+            self.paths = self.monte_carlo.generate_paths(self.mc_paths, horizon, points_per_year=self.comp, initial_prices=init_prices)
             self._paths_horizon = horizon
 
         return self.paths
@@ -203,11 +207,13 @@ class Portfolio:
 
     def get_var(self, ci : float = 0.95, scenario : str = "base", horizon : int = 1):
         s = self.run_scenario(scenario)
-        paths = s.get_paths(horizon=horizon)
 
-        asset_names = paths["asset_names"]
+        
         weights = np.array([self.asset_alloc.weights.get(a, 0.0) for a in asset_names], dtype=float)
+        paths = s.get_paths(horizon=horizon, weights=weights)
 
+        
+        
         initial_prices = paths["prices"][:, 0, :]
         final_idx = int(round(horizon * s.comp))
         final_prices = paths["prices"][:, final_idx, :]
@@ -222,11 +228,12 @@ class Portfolio:
 
     def get_cvar(self, ci : float = 0.95, scenario : str = "base", horizon : int = 1):
         s = self.run_scenario(scenario)
+
+        weights = np.array([self.asset_alloc.weights.get(a, 0.0) for a in asset_names], dtype=float)
         paths = s.get_paths(horizon=horizon)
 
         asset_names = paths["asset_names"]
-        weights = np.array([self.asset_alloc.weights.get(a, 0.0) for a in asset_names], dtype=float)
-
+        
         initial_prices = paths["prices"][:, 0, :]
         final_idx = int(round(horizon * s.comp))
         final_prices = paths["prices"][:, final_idx, :]
