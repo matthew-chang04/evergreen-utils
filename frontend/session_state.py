@@ -42,6 +42,8 @@ def ensure_app_state():
         st.session_state.benchmark_weights = DEFAULT_WEIGHTS.copy()
     if "benchmark_name" not in st.session_state:
         st.session_state.benchmark_name = "Benchmark Portfolio"
+    if "test_weights" not in st.session_state:
+        st.session_state.test_weights = DEFAULT_WEIGHTS.copy()
 
 
 def normalize_weights(weights):
@@ -71,7 +73,7 @@ def build_portfolio(weights):
         actuarial_df=cma.ACTUARIAL_DF,
         service_cost=cma.SERVICE_COST_RATE,
         starting_liabilities=cma.LIABILITIES,
-        starting_benefit=cma.STARTING_BENEFIT,
+        average_benefit=cma.AVG_BENEFIT,
         benefit_growth_rate=cma.BENEFIT_GROWTH_RATE,
         liabilities_cache={},
     )

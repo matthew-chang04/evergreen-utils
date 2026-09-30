@@ -20,6 +20,9 @@ st.caption("Analytics are produced for the saved benchmark portfolio, regardless
 benchmark_weights = st.session_state.get("benchmark_weights", {})
 benchmark_name = st.session_state.get("benchmark_name", "Benchmark Portfolio")
 
+test_new_weights = st.session_state.get("test_weights", {})
+
+
 ptf, alloc, liabilities = build_portfolio(benchmark_weights)
 
 st.subheader(benchmark_name)
@@ -62,10 +65,10 @@ with st.spinner("Running Monte Carlo..."):
 st.header("Key metrics")
 col1, col2, col3 = st.columns(3)
 with col1:
-    var = ptf.get_var(ci=0.95, horizon=1)
+    var = ptf.get_var(ci=0.05, horizon=1)
     st.metric("VaR (95%, 1y)", f"${var:,.0f}")
 with col2:
-    cvar = ptf.get_cvar(ci=0.95, horizon=1)
+    cvar = ptf.get_cvar(ci=0.05, horizon=1)
     st.metric("CVaR (95%, 1y)", f"${cvar:,.0f}")
 with col3:
     st.metric("Sharpe Ratio (ann.)", f"{alloc.get_sharpe():.2f}")

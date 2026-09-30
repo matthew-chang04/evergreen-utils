@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 
 @dataclass
@@ -19,7 +20,7 @@ class Liabilities:
 
     starting_liabilities : float
 
-    starting_benefit : float
+    average_benefit : float
     benefit_growth_rate : float
 
     # maps years to value
@@ -39,7 +40,7 @@ class Liabilities:
 
     def get_payroll(self, t: int) -> float:
         payroll = self.get_active_members(t) * self.average_salary
-        return payroll * ((1 + self.wage_growth_rate) ** t)
+        return payroll * math.exp(self.wage_growth_rate * t)
 
     def get_service_cost(self, t: int)  -> float:
         if t <= 0:
@@ -58,8 +59,8 @@ class Liabilities:
     def benefits_paid(self, t) -> float:
         if t <= 0:
             return 0.0
-        
-        return self.starting_benefit * ((1 + self.benefit_growth_rate) ** t)
+  
+        return self.average_benefit * self.retired_members * math.exp(self.benefit_growth_rate * t)
 
     def get_closing_liabilities(self, t: int) -> float:
         if t <= 0:

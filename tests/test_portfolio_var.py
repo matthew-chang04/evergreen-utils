@@ -76,7 +76,7 @@ def test_funded_ratio_uses_requested_horizon_for_simulation(portfolio, monkeypat
     assert np.isfinite(result)
 
 
-def test_generate_paths_supports_simple_weighted_return_mode():
+def test_generate_paths_returns_asset_level_returns_only():
     sim = MonteCarloSim(
         means={"cash": 0.02, "fixed_income": 0.04},
         cov=[[0.01, 0.0], [0.0, 0.04]],
@@ -88,10 +88,32 @@ def test_generate_paths_supports_simple_weighted_return_mode():
         horizon=2,
         points_per_year=1,
         seed=42,
-        simple=True,
-        weights=[0.5, 0.5],
     )
 
-    assert paths["simple_returns"].shape == (250, 2)
-    assert paths["portfolio_mean"] == pytest.approx(0.03)
-    assert paths["portfolio_variance"] == pytest.approx(0.0125)
+    assert paths["simple_returns"].shape == (250, 2, 2)
+    assert "portfolio_mean" not in paths
+    with pytest.raises(TypeError):
+        sim.generate_paths(num_paths=10, horizon=1, simple=True, weights=[0.5, 0.5])
+
+
+def test_generate_paths_tracks_compounded_growth_and_percentiles():
+    sim = MonteCarloSim(
+        means={"cash": 0.02, "fixed_income": 0.04},
+        cov=[[0.01, 0.0], [0.0, 0.04]],
+        asset_names=["cash", "fixed_income"],
+    )
+
+    paths = sim.generate_paths(
+        num_paths=50,
+        horizon=2,
+        points_per_year=2,
+        seed=7,
+    )
+
+    assert paths["growth_factor"].shape == (50, 5, 2)
+    assert paths["simple_returns"].shape == (50, 4, 2)
+    np.testing.assert_allclose(paths["growth_factor"][:, 0, :], 1.0)
+    assert np.all(paths["growth_factor"][:, 1:, :] >= 0.0)
+    assert np.isclose(sim.get_percentile(0.5, weights=[0.5, 0.5], step=-1), np.quantile(
+        sim.get_weighted_returns([0.5, 0.5], step=-1), 0.5
+    ))
