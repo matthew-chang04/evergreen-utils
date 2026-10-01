@@ -1,7 +1,20 @@
 import streamlit as st
 
 from portfolio.liabilities import Liabilities
-from portfolio.portfolio import Asset, AssetAlloc, Portfolio
+from portfolio.portfolio import (
+    Asset,
+    AssetAlloc,
+    Portfolio,
+    Cash,
+    FixedIncome,
+    CanEquity,
+    USEquity,
+    IDEquity,
+    EMEquity,
+    RealEstate,
+    Infrastructure,
+    PrivateEquity,
+)
 import assumptions.cma as cma
 
 ASSET_KEYS = [
@@ -42,8 +55,14 @@ def ensure_app_state():
         st.session_state.benchmark_weights = DEFAULT_WEIGHTS.copy()
     if "benchmark_name" not in st.session_state:
         st.session_state.benchmark_name = "Benchmark Portfolio"
+    if "benchmark_ptf" not in st.session_state:
+        st.session_state.benchmark_ptf = build_portfolio(DEFAULT_WEIGHTS.copy()) 
+    if "test_name" not in st.session_state:
+        st.session_state.test_name = "Test Portfolio"
     if "test_weights" not in st.session_state:
         st.session_state.test_weights = DEFAULT_WEIGHTS.copy()
+    if "test_ptf" not in st.session_state:
+        st.session_state.test_ptf = build_portfolio(DEFAULT_WEIGHTS.copy())
 
 
 def normalize_weights(weights):
@@ -59,7 +78,18 @@ def normalize_weights(weights):
 
 def build_portfolio(weights):
     normalized = normalize_weights(weights)
-    assets = [(Asset(name=name), float(weight)) for name, weight in normalized.items()]
+    asset_factory = {
+        "cash": Cash,
+        "fixed_income": FixedIncome,
+        "can_equity": CanEquity,
+        "us_equity": USEquity,
+        "id_equity": IDEquity,
+        "em_equity": EMEquity,
+        "real_estate": RealEstate,
+        "infrastructure": Infrastructure,
+        "private_equity": PrivateEquity,
+    }
+    assets = [(asset_factory[name](), float(weight)) for name, weight in normalized.items()]
     alloc = AssetAlloc(assets)
     liabilities = Liabilities(
         retired_members=cma.RETIRED_MEMBERS,
@@ -79,3 +109,5 @@ def build_portfolio(weights):
     )
     portfolio = Portfolio(alloc, liabilities)
     return portfolio, alloc, liabilities
+
+

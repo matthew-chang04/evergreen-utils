@@ -25,7 +25,7 @@ st.sidebar.number_input("Sample paths to plot", min_value=10, max_value=5000, va
 
 pages = [
     st.Page("frontend/pages/allocation.py", title="Allocation Research", default=True),
-    st.Page("frontend/pages/performance.py", title="Performance Metrics"),
+    st.Page("frontend/pages/performance.py", title="Growth Model"),
 ]
 
 st.navigation(pages).run()

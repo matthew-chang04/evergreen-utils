@@ -16,22 +16,79 @@ ensure_app_state()
 st.title("Allocation Research")
 st.caption("Build a target portfolio and keep it as the active benchmark for performance analytics.")
 
+st.markdown(
+    """
+    <style>
+        .block-container {
+            padding-top: 1rem;
+            padding-bottom: 2rem;
+        }
+        div[data-testid="stMetricLabel"] {
+            font-size: 0.7rem !important;
+            white-space: normal !important;
+        }
+        div[data-testid="stMetricValue"] {
+            font-size: 1.15rem !important;
+            line-height: 1.25 !important;
+        }
+        div[data-testid="stMetricDelta"] {
+            font-size: 0.7rem !important;
+        }
+        .stDataFrame, .stPlotlyChart {
+            margin-top: 0.25rem;
+        }
+        div[data-testid="stExpander"] {
+            margin-bottom: 0.5rem;
+        }
+        div[data-testid="stExpanderDetails"] {
+            padding-top: 0.25rem;
+        }
+        div[data-testid="stSlider"] label {
+            font-size: 0.62rem !important;
+            margin-bottom: 0.05rem !important;
+        }
+        div[data-testid="stSlider"] [data-baseweb="slider"] {
+            min-height: 0.8rem !important;
+            margin-top: 0 !important;
+        }
+        div[data-testid="stSlider"] div {
+            font-size: 0.68rem !important;
+        }
+        div[data-testid="stVerticalBlock"] > div {
+            margin-bottom: 0.05rem !important;
+        }
+        div[data-testid="stVerticalBlock"] {
+            gap: 0.1rem !important;
+        }
+        div[data-testid="stHorizontalBlock"] > div {
+            gap: 0.08rem !important;
+        }
+        .stButton > button {
+            min-width: 100%;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 weights = st.session_state.draft_weights.copy()
 
 st.subheader("Portfolio worksheet")
 
+with st.expander("Change Portfolio Allocation", expanded=False):
+    slider_col, summary_col = st.columns([1.15, 1.85], gap="large")
 
-with st.expander("Change Portfolio Allocation"):
-    updated = {}
-    for asset in ASSET_KEYS:
-        updated[asset] = st.slider(
-            asset.replace("_", " ").title(),
-            min_value=0.0,
-            max_value=1.0,
-            value=float(weights.get(asset, 0.0)),
-            step=0.01,
-            key=f"draft_{asset}",
-        )
+    with slider_col:
+        updated = {}
+        for asset in ASSET_KEYS:
+            updated[asset] = st.slider(
+                asset.replace("_", " ").title(),
+                min_value=0.0,
+                max_value=1.0,
+                value=float(weights.get(asset, 0.0)),
+                step=0.01,
+                key=f"draft_{asset}",
+            )
 
     total = sum(updated.values())
     if total > 0:
@@ -41,101 +98,82 @@ with st.expander("Change Portfolio Allocation"):
 
     st.session_state.draft_weights = normalized
 
-    st.write("Current target mix")
-    df = pd.DataFrame({"asset": list(normalized.keys()), "weight": list(normalized.values())})
-    fig = px.pie(df, values="weight", names="asset", title="Portfolio Allocation")
-    st.plotly_chart(fig, use_container_width=True)
+    with summary_col:
+        st.caption(f"Current total: {total:.2%}")
 
-    st.write("Weight summary")
-    st.dataframe(df.assign(weight=df["weight"].map(lambda x: f"{x:.2%}")), use_container_width=True)
+        df = pd.DataFrame({"asset": list(normalized.keys()), "weight": list(normalized.values())})
+        fig = px.pie(df, values="weight", names="asset", title="Portfolio Allocation")
+        fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), font=dict(size=11), legend=dict(font=dict(size=10)))
+        st.plotly_chart(fig, use_container_width=True, height=260)
 
-    if sum(normalized.values()) != 1.0:
-        st.warning("The worksheet weights are being normalized to sum to 100% before evaluation.")
+        st.write("Weight summary")
+        st.dataframe(df.assign(weight=df["weight"].map(lambda x: f"{x:.2%}")), use_container_width=True, hide_index=True)
 
-    if st.button("Compare current alloc with model"):
-        st.session_state.test_weights = normalized.copy() 
-        st.success = "Portfolio saved"
+        if not abs(total - 1.0) < 1e-6:
+            st.warning("The raw mix must total 100% before the benchmark can be confirmed.")
 
-
-portfolio_metrics_col, monte_carlo_stats, monte_carlo_vis = st.columns(3)
-
-with portfolio_metrics_col:
-    ptf, alloc, _ = build_portfolio(normalized) 
-    if st.session_state.benchmark_weights != normalized:
-        bench_ptf, bench_alloc, _= build_portfolio(st.session_state.benchmark_weights)
-        test_new = True
-    else:
-        test_new = False
- 
-
-col1, col2, col3, col4, col5, col6, col7  = st.columns(7, border=True, wrap=False)
-with col1:
-    ex = alloc.get_expected_return()
-    st.metric("Portfolio Return", f"{ex:.2f}")
-
-    if test_new:
-        ex_bench = bench_alloc.get_expected_return()
-        st.metric("Benchmark Ptf Return", f"{ex_bench:.2f}")
-        st.metric("Change", f"{ex - ex_bench:.2f}")
-        
-with col2:
-    variance = alloc.get_variance()
-    st.metric("Portfolio Variance", f"{ex:.2f}")   
-
-    if test_new:
-        variance_bench = bench_alloc.get_variance()
-        st.metric("Benchmark Ptf Return", f"{variance_bench:.2f}")
-        st.metric("Change", f"{variance - variance_bench:.2f}")
-
-with col3:
-    sharpe = alloc.get_sharpe()
-    st.metric("Sharpe Ratio", f"{sharpe:.2f}")
-
-    if test_new:
-        sharpe_bench = bench_alloc.get_sharpe()
-        st.metric("Benchmark Sharpe", f"{sharpe_bench:.2f}")
-        st.metric("Change", f"{sharpe - sharpe_bench:.2f}")
-
-with col4: 
-    var = ptf.get_var(ci=0.05, horizon=1)
-    st.metric("VaR (95%, 1y)", f"${var:,.2f}")
-
-    if test_new:
-        var_bench = bench_ptf.get_var(ci=0.05, horizon=1)
-        st.metric("Benchmark Ptf Return", f"{var_bench:.2f}")
-        st.metric("Change", f"{var - var_bench:.2f}")
-
-with col5:
-    cvar = ptf.get_cvar(ci=0.05, horizon=1)
-    st.metric("CVaR (95%, 1y)", f"${cvar:,.2f}") 
-
-    if test_new:
-        cvar_bench = ptf.get_cvar(ci=0.05, horizon=1)
-        st.metric("Benchmark CVaR", f"{cvar_bench:.2f}")
-        st.metric("Change", f"{cvar - cvar_bench:.2f}")
-
-with col6:
-    p_underfunding = ptf.underfunding_probability()
-    st.metric("P(Underfunding)", f"{p_underfunding:.2f}")
-
-    if test_new:
-        p_u_bench = bench_ptf.underfunding_probability()
-        st.metric("Benchmark P(Underfunding)", f"{p_u_bench:.2f}")
-        st.metric("Change", f"{p_underfunding - p_u_bench:.2f}")
-
-with col7:
-    fr_vol = ptf.funded_ratio_vol()
-    st.metric("Funded Ratio Vol", f"{fr_vol:.2f}")
-
-    if test_new:
-        fr_vol_bench = bench_ptf.funded_ratio_vol()
-        st.metric("Benchmark Funded Ratio Vol", f"{fr_vol_bench:.2f}")
-        st.metric("Change", f"{fr_vol - fr_vol_bench:.2f}")
-
-        
+        if st.button("Compare current alloc with model", disabled=not abs(total - 1.0) < 1e-6):
+            st.session_state.test_weights = normalized.copy()
+            st.success("Portfolio saved")
 
 
+if st.session_state.benchmark_weights != normalized:
+    st.session_state.test_ptf = build_portfolio(st.session_state.test_weights) 
+    test_new = True
+else: 
+    test_new = False
 
+
+bench_ptf, bench_alloc, _ = st.session_state.benchmark_ptf
+ptf, alloc, _ = st.session_state.test_ptf
+
+risk_up_is_bad = {
+    "Portfolio Vol",
+    "VaR (95%, 1y)",
+    "CVaR (95%, 1y)",
+    "P(Underfunding)",
+    "Funded Ratio Vol",
+}
+
+metric_specs = [
+    ("Portfolio Return", alloc.get_expected_return(), bench_alloc.get_expected_return() if test_new else None),
+    ("Portfolio Vol", alloc.get_std_dev(), bench_alloc.get_std_dev() if test_new else None),
+    ("Sharpe Ratio", alloc.get_sharpe(), bench_alloc.get_sharpe() if test_new else None),
+    ("VaR (95%, 1y)", ptf.get_var(ci=0.05, horizon=1), bench_ptf.get_var(ci=0.05, horizon=1) if test_new else None),
+    ("CVaR (95%, 1y)", ptf.get_cvar(ci=0.05, horizon=1), bench_ptf.get_cvar(ci=0.05, horizon=1) if test_new else None),
+    ("P(Underfunding)", ptf.underfunding_probability(), bench_ptf.underfunding_probability() if test_new else None),
+    ("Funded Ratio Vol", ptf.funded_ratio_vol(), bench_ptf.funded_ratio_vol() if test_new else None),
+]
+
+metric_columns = st.columns(4, gap="small")
+for idx, (label, value, benchmark_value) in enumerate(metric_specs):
+
+    percent_metrics = {"Portfolio Return", "Portfolio Vol", "P(Underfunding)", "Funded Ratio Vol"}
+    with metric_columns[idx % 4]:
+        if benchmark_value is None:
+            if label in percent_metrics:
+                st.metric(label, f"{value:.2%}")
+            elif label in {"VaR (95%, 1y)", "CVaR (95%, 1y)"}:
+                st.metric(label, f"${value:,.2f}")
+            else:
+                st.metric(label, f"{value:,.2f}")
+        else:
+            delta = value - benchmark_value
+            delta_text = f"{delta:+.2%}" if label in percent_metrics else f"{delta:+,.2f}"
+            if label in {"VaR (95%, 1y)", "CVaR (95%, 1y)"}:
+                delta_text = f"${delta:+,.2f}"
+
+            metric_color = "inverse" if label in risk_up_is_bad else "normal"
+
+            if label in percent_metrics:
+                st.metric(label, f"{value:.2%}", delta=delta_text, delta_color=metric_color)
+            elif label in {"VaR (95%, 1y)", "CVaR (95%, 1y)"}:
+                st.metric(label, f"${value:,.2f}", delta=delta_text, delta_color=metric_color)
+            else:
+                st.metric(label, f"{value:,.2f}", delta=delta_text, delta_color=metric_color)
+
+    if idx % 4 == 3 and idx != len(metric_specs) - 1:
+        st.markdown("<div style='height: 0.25rem'></div>", unsafe_allow_html=True)
 
 st.markdown("---")
-st.info("Switch to Performance Metrics to review the portfolio currently saved as the benchmark.")
+st.info("Switch to Growth Model to see portfolio movement over time.")

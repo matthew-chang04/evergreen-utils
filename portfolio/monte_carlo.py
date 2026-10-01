@@ -3,10 +3,6 @@ import numpy as np
 from scipy.linalg import cholesky
 from assumptions.cma import RETURNS, COVARIANCE
 
-    
-    
-
-
 class MonteCarloSim:
     """
 
