@@ -9,6 +9,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from frontend.metric_utils import render_metric_grid
 from frontend.session_state import ASSET_KEYS, ensure_app_state, build_portfolio
 
 ensure_app_state()
@@ -21,7 +22,15 @@ st.markdown(
     <style>
         .block-container {
             padding-top: 1rem;
-            padding-bottom: 2rem;
+            padding-bottom: 1.5rem;
+        }
+        h1 {
+            font-size: 1.6rem !important;
+            margin-bottom: 0.2rem !important;
+        }
+        h2 {
+            font-size: 1.15rem !important;
+            margin-bottom: 0.2rem !important;
         }
         div[data-testid="stMetricLabel"] {
             font-size: 0.7rem !important;
@@ -127,14 +136,6 @@ else:
 bench_ptf, bench_alloc, _ = st.session_state.benchmark_ptf
 ptf, alloc, _ = st.session_state.test_ptf
 
-risk_up_is_bad = {
-    "Portfolio Vol",
-    "VaR (95%, 1y)",
-    "CVaR (95%, 1y)",
-    "P(Underfunding)",
-    "Funded Ratio Vol",
-}
-
 metric_specs = [
     ("Portfolio Return", alloc.get_expected_return(), bench_alloc.get_expected_return() if test_new else None),
     ("Portfolio Vol", alloc.get_std_dev(), bench_alloc.get_std_dev() if test_new else None),
@@ -144,36 +145,7 @@ metric_specs = [
     ("P(Underfunding)", ptf.underfunding_probability(), bench_ptf.underfunding_probability() if test_new else None),
     ("Funded Ratio Vol", ptf.funded_ratio_vol(), bench_ptf.funded_ratio_vol() if test_new else None),
 ]
-
-metric_columns = st.columns(4, gap="small")
-for idx, (label, value, benchmark_value) in enumerate(metric_specs):
-
-    percent_metrics = {"Portfolio Return", "Portfolio Vol", "P(Underfunding)", "Funded Ratio Vol"}
-    with metric_columns[idx % 4]:
-        if benchmark_value is None:
-            if label in percent_metrics:
-                st.metric(label, f"{value:.2%}")
-            elif label in {"VaR (95%, 1y)", "CVaR (95%, 1y)"}:
-                st.metric(label, f"${value:,.2f}")
-            else:
-                st.metric(label, f"{value:,.2f}")
-        else:
-            delta = value - benchmark_value
-            delta_text = f"{delta:+.2%}" if label in percent_metrics else f"{delta:+,.2f}"
-            if label in {"VaR (95%, 1y)", "CVaR (95%, 1y)"}:
-                delta_text = f"${delta:+,.2f}"
-
-            metric_color = "inverse" if label in risk_up_is_bad else "normal"
-
-            if label in percent_metrics:
-                st.metric(label, f"{value:.2%}", delta=delta_text, delta_color=metric_color)
-            elif label in {"VaR (95%, 1y)", "CVaR (95%, 1y)"}:
-                st.metric(label, f"${value:,.2f}", delta=delta_text, delta_color=metric_color)
-            else:
-                st.metric(label, f"{value:,.2f}", delta=delta_text, delta_color=metric_color)
-
-    if idx % 4 == 3 and idx != len(metric_specs) - 1:
-        st.markdown("<div style='height: 0.25rem'></div>", unsafe_allow_html=True)
+render_metric_grid(metric_specs, columns=4)
 
 st.markdown("---")
 st.info("Switch to Growth Model to see portfolio movement over time.")

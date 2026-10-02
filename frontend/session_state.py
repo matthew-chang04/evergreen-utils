@@ -110,4 +110,14 @@ def build_portfolio(weights):
     portfolio = Portfolio(alloc, liabilities)
     return portfolio, alloc, liabilities
 
+def add_scenario(name: str, deltas : dict):
 
+    ptf, _, _ = st.session_state.benchmark_ptf 
+    ptf.add_scenario(name, deltas)
+
+    if st.session_state.benchmark_weights != st.session_state.test_weights:
+        test_ptf, _, _ = st.session_state.test_ptf
+        test_ptf.add_scenario(name, deltas)
+
+
+    

@@ -6,6 +6,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from frontend.metric_utils import render_metric_grid
+from frontend.percentile_projection import build_percentile_projection_figure
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
@@ -17,6 +20,68 @@ ensure_app_state()
 st.title("Growth Model")
 st.caption("Benchmark portfolio growth versus liability growth, based on the currently saved portfolio allocation.")
 
+st.markdown(
+    """
+    <style>
+        .block-container {
+            padding-top: 1rem;
+            padding-bottom: 1.5rem;
+        }
+        h1 {
+            font-size: 1.6rem !important;
+            margin-bottom: 0.2rem !important;
+        }
+        h2 {
+            font-size: 1.15rem !important;
+            margin-bottom: 0.2rem !important;
+        }
+        div[data-testid="stMetricLabel"] {
+            font-size: 0.7rem !important;
+            white-space: normal !important;
+        }
+        div[data-testid="stMetricValue"] {
+            font-size: 1.15rem !important;
+            line-height: 1.25 !important;
+        }
+        div[data-testid="stMetricDelta"] {
+            font-size: 0.7rem !important;
+        }
+        .stDataFrame, .stPlotlyChart {
+            margin-top: 0.25rem;
+        }
+        div[data-testid="stExpander"] {
+            margin-bottom: 0.5rem;
+        }
+        div[data-testid="stExpanderDetails"] {
+            padding-top: 0.25rem;
+        }
+        div[data-testid="stSlider"] label {
+            font-size: 0.62rem !important;
+            margin-bottom: 0.05rem !important;
+        }
+        div[data-testid="stSlider"] [data-baseweb="slider"] {
+            min-height: 0.8rem !important;
+            margin-top: 0 !important;
+        }
+        div[data-testid="stSlider"] div {
+            font-size: 0.68rem !important;
+        }
+        div[data-testid="stVerticalBlock"] > div {
+            margin-bottom: 0.05rem !important;
+        }
+        div[data-testid="stVerticalBlock"] {
+            gap: 0.1rem !important;
+        }
+        div[data-testid="stHorizontalBlock"] > div {
+            gap: 0.08rem !important;
+        }
+        .stButton > button {
+            min-width: 100%;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 ptf_name = st.selectbox("Portfolio Source", ["Test Portfolio", "Benchmark Portfolio"])
 if st.session_state.get("test_weights") != st.session_state.get("benchmark_weights") and ptf_name == "Test Portfolio":     
@@ -55,48 +120,13 @@ with st.spinner("Running Monte Carlo..."):
     liability_values = [liabilities.get_closing_liabilities(t) for t in range(0, int(horizon) + 1)]
     liability_years = np.linspace(0, horizon, len(liability_values))
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=times,
-        y=p90,
-        line=dict(color='rgba(59,130,246,0)', width=0),
-        fill='tonexty',
-        fillcolor='rgba(96,165,250,0.12)',
-        name='10th-90th percentile',
-        hoverinfo='skip',
-    ))
-    fig.add_trace(go.Scatter(
-        x=times,
-        y=p10,
-        line=dict(color='rgba(59,130,246,0)', width=0),
-        showlegend=False,
-        hoverinfo='skip',
-    ))
-    fig.add_trace(go.Scatter(
-        x=times,
-        y=p75,
-        line=dict(color='rgba(59,130,246,0)', width=0),
-        fill='tonexty',
-        fillcolor='rgba(37,99,235,0.10)',
-        name='25th-75th percentile',
-        hoverinfo='skip',
-    ))
-    fig.add_trace(go.Scatter(
-        x=times,
-        y=p25,
-        line=dict(color='rgba(59,130,246,0)', width=0),
-        showlegend=False,
-        hoverinfo='skip',
-    ))
-    fig.add_trace(go.Scatter(x=times, y=p50, mode='lines', line=dict(color='#1d4ed8', width=2.5), name='Median'))
-
-    fig.add_trace(go.Scatter(
-        x=liability_years,
-        y=liability_values,
-        mode='lines',
-        line=dict(color='#dc2626', width=2.4),
-        name='Liabilities',
-    ))
+    percentile_values = {10: p10, 25: p25, 50: p50, 75: p75, 90: p90}
+    fig = build_percentile_projection_figure(
+        times=times,
+        percentile_values=percentile_values,
+        liability_values=np.asarray(liability_values, dtype=float),
+        liability_years=liability_years,
+    )
 
     percentile_cap = max(np.quantile(ptf_values, 0.99), np.quantile(liability_values, 0.99))
     percentile_floor = min(np.quantile(ptf_values, 0.01), np.min(liability_values))
@@ -118,8 +148,8 @@ with st.spinner("Running Monte Carlo..."):
             borderwidth=1,
             font=dict(color='#0f172a', size=11),
         ),
-        margin=dict(l=12, r=12, t=42, b=12),
-        height=450,
+        margin=dict(l=12, r=12, t=30, b=12),
+        height=330,
         paper_bgcolor='#f8fafc',
         plot_bgcolor='#f8fafc',
         xaxis=dict(
@@ -143,42 +173,21 @@ with st.spinner("Running Monte Carlo..."):
     st.plotly_chart(fig, use_container_width=True)
 
 st.header("Key metrics")
-col1, col2, col3 = st.columns(3)
-with col1:
-    var = ptf.get_var(ci=0.05, horizon=1)
-    st.metric("VaR (95%, 1y)", f"${var:,.0f}")
-with col2:
-    cvar = ptf.get_cvar(ci=0.05, horizon=1)
-    st.metric("CVaR (95%, 1y)", f"${cvar:,.0f}")
-with col3:
-    st.metric("Sharpe Ratio (ann.)", f"{alloc.get_sharpe():.2f}")
-
-# st.header("Liability Growth")
-# years = list(range(0, int(horizon) + 1))
-# liability_values = [liabilities.get_closing_liabilities(t) for t in years]
-# fig2 = go.Figure()
-# fig2.add_trace(go.Scatter(x=years, y=liability_values, mode='lines+markers', name='Liabilities', line=dict(color='red')))
-# fig2.update_layout(title='Projected Liabilities', xaxis_title='Years', yaxis_title='Liability Value')
-# st.plotly_chart(fig2, use_container_width=True)
-
-st.header("Funded Ratio Distribution")
 final_vals = ptf_values[:, -1]
 funded = np.array([ptf._get_funded_ratio(a, int(horizon)) for a in final_vals])
-funded_df = pd.DataFrame({"final_portfolio": final_vals, "funded_ratio": funded})
-st.write(funded_df["funded_ratio"].describe())
 
-mean_funded = funded.mean()
-std_funded = funded.std(ddof=1)
-lo = max(0.0, mean_funded - 2.0 * std_funded)
-hi = mean_funded + 2.0 * std_funded
-centered_funded = funded[(funded >= lo) & (funded <= hi)]
+avg_funded_ratio = funded.mean()
+prob_underfunded = np.mean(funded < 1.0)
 
-hist, edges = np.histogram(centered_funded, bins=20, range=(lo, hi))
-hist_df = pd.DataFrame({
-    "bin_start": edges[:-1],
-    "count": hist,
-})
-st.bar_chart(hist_df.set_index("bin_start")["count"])
+metric_specs = [
+    ("VaR (95%, 1y)", ptf.get_var(ci=0.05, horizon=1)),
+    ("CVaR (95%, 1y)", ptf.get_cvar(ci=0.05, horizon=1)),
+    ("Sharpe Ratio (ann.)", alloc.get_sharpe()),
+    ("Avg funded ratio", avg_funded_ratio),
+    ("P(Underfunding)", prob_underfunded),
+]
+
+render_metric_grid(metric_specs, columns=4)
 
 st.markdown("---")
 
