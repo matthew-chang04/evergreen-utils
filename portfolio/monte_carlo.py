@@ -100,7 +100,7 @@ class MonteCarloSim:
         self,
         num_paths: int,
         horizon: float,
-        points_per_year: int = 1,
+        points_per_year: int = 12,
         seed: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Generate correlated asset-level return paths.
@@ -115,6 +115,9 @@ class MonteCarloSim:
         num_paths = int(num_paths)
         points_per_year = int(points_per_year)
         num_steps = int(round(float(horizon) * points_per_year))
+
+        print(horizon)
+        print(num_steps)
         dt = 1.0 / float(points_per_year)
 
         if seed is not None:

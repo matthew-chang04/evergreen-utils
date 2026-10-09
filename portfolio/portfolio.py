@@ -26,7 +26,7 @@ class FixedIncome(Asset):
     name: str = "fixed_income"
     expected_return: float = RETURNS["fixed_income"]
     variance: float = COVARIANCE[1][1]
-    liquidity: float = 1.0
+    liquidity: float = 0.9
     asset_class: str = "FixedIncome"
 
 @dataclass
@@ -34,7 +34,7 @@ class CanEquity(Asset):
     name: str = "can_equity"
     expected_return: float = RETURNS["can_equity"]
     variance: float = COVARIANCE[2][2]
-    liquidity: float = 1.0
+    liquidity: float = 0.8
     asset_class: str = "Equity"
 
 @dataclass
@@ -42,7 +42,7 @@ class USEquity(Asset):
     name: str = "us_equity"
     expected_return: float = RETURNS["us_equity"]
     variance: float = COVARIANCE[3][3]
-    liquidity: float = 1.0
+    liquidity: float = 0.8
     asset_class: str = "Equity"
 
 
@@ -51,7 +51,7 @@ class IDEquity(Asset):
     name: str = "id_equity"
     expected_return: float = RETURNS["id_equity"]
     variance: float = COVARIANCE[4][4]
-    liquidity: float = 1.0
+    liquidity: float = 0.8
     asset_class: str = "Equity"
 
 @dataclass
@@ -59,7 +59,7 @@ class EMEquity(Asset):
     name: str = "em_equity"
     expected_return: float = RETURNS["em_equity"]
     variance: float = COVARIANCE[5][5]
-    liquidity: float = 1.0
+    liquidity: float = 0.8
     asset_class: str = "Equity"
 
 @dataclass
@@ -67,7 +67,7 @@ class RealEstate(Asset):
     name: str = "real_estate"
     expected_return: float = RETURNS["real_estate"]
     variance: float = COVARIANCE[6][6]
-    liquidity: float = 1.0
+    liquidity: float = 0.5
     asset_class: str = "RealAssets"
 
 @dataclass
@@ -75,7 +75,7 @@ class Infrastructure(Asset):
     name: str = "infrastructure"
     expected_return: float = RETURNS["infrastructure"]
     variance: float = COVARIANCE[7][7]
-    liquidity: float = 1.0
+    liquidity: float = 0.5
     asset_class: str = "RealAssets"
 
 @dataclass
@@ -83,7 +83,7 @@ class PrivateEquity(Asset):
     name: str = "private_equity"
     expected_return: float = RETURNS["private_equity"]
     variance: float = COVARIANCE[8][8]
-    liquidity: float = 1.0
+    liquidity: float = 0.2
     asset_class: str = "PrivateEquity"
 
 
@@ -129,27 +129,26 @@ class AssetAlloc:
 
         return (e_x - INTEREST_RATE) / vol
 
-    def get_asset_drift(self):
-        pass
+        
 
 class Scenario:
     monte_carlo : MonteCarloSim
     horizon : float
-    comp : int
+    points_per_year : int
 
     def __init__(
             self, 
             scenario : str = "base", 
             horizon : float = 30.0, 
-            dc : int = 1, 
+            points_per_year : int = 12, 
             mc_paths: int = 10000, 
             scenario_deltas : dict | None = None
         ):
 
         self.horizon = horizon
-        self.comp = dc
+        self.points_per_year = points_per_year
         self.paths = None
-        self._paths_horizon = None
+        self._paths_horizon = 0.0
         self.mc_paths = mc_paths
 
         if scenario_deltas is None:
@@ -168,8 +167,8 @@ class Scenario:
         if horizon is None:
             horizon = self.horizon
 
-        if self.paths is None or self._paths_horizon != horizon:
-            self.paths = self.monte_carlo.generate_paths(self.mc_paths, horizon, points_per_year=self.comp)
+        if self.paths is None or self._paths_horizon < horizon:
+            self.paths = self.monte_carlo.generate_paths(self.mc_paths, horizon, points_per_year=self.points_per_year)
             self._paths_horizon = horizon
         self.monte_carlo.paths = self.paths
 
@@ -209,7 +208,7 @@ class Portfolio:
 
         asset_names = paths["asset_names"]
         weights = np.array([self.asset_alloc.weights.get(a, 0.0) for a in asset_names], dtype=float)
-        final_idx = int(round(horizon * s.comp))
+        final_idx = int(round(horizon * s.points_per_year))
         weighted_returns = s.monte_carlo.get_weighted_returns(weights, step=final_idx)
         worst_return = float(s.monte_carlo.get_percentile(ci, weights=weights, step=final_idx))
         return float(max(0.0, -worst_return) * AUM)
@@ -221,7 +220,7 @@ class Portfolio:
 
         asset_names = paths["asset_names"]
         weights = np.array([self.asset_alloc.weights.get(a, 0.0) for a in asset_names], dtype=float)
-        final_idx = int(round(horizon * s.comp))
+        final_idx = int(round(horizon * s.points_per_year))
         weighted_returns = s.monte_carlo.get_weighted_returns(weights, step=final_idx)
         var_return = float(s.monte_carlo.get_percentile(ci, weights=weights, step=final_idx))
         tail = weighted_returns[weighted_returns <= var_return]
@@ -229,22 +228,27 @@ class Portfolio:
             return float(max(0.0, -var_return) * AUM)
         return float(max(0.0, -np.mean(tail)) * AUM)
 
-    def _get_ptf_value(self, scenario : str = "base", horizon : float | None = None):
+    def _get_ptf_value(self, scenario : str = "base", horizon : float | None = None, assets : list[str] | None = None):
         s = self.run_scenario(scenario)
         if horizon is None:
             horizon = s.horizon
         paths = s.get_paths(horizon=horizon)
 
-        asset_names = paths["asset_names"]
+        if assets is None:  
+            asset_names = paths["asset_names"]
+        else:
+            asset_names = assets
         weights = np.array([self.asset_alloc.weights.get(a, 0.0) for a in asset_names], dtype=float)
 
         start_vals = AUM * weights
 
-        growth = paths["prices"] / paths["prices"][:, 0, :][:, None, :]
+        asset_indexes = [paths["asset_names"].index(a) for a in asset_names]
+
+        prices = paths["prices"][:, :, asset_indexes]
+        growth = prices / prices[:, 0, :][:, None, :]
         asset_vals = growth * start_vals[None, None, :]
 
         ptf_value = asset_vals.sum(axis=2)
-
         return ptf_value
 
      
@@ -255,7 +259,7 @@ class Portfolio:
     def underfunding_probability(self, scenario : str = "base", horizon : float = 30.0):
         s = self.run_scenario(scenario)
         ptf_values = self._get_ptf_value(scenario, horizon=horizon)
-        final_idx = int(round(horizon * s.comp))
+        final_idx = int(round(horizon * s.points_per_year))
 
         l = self.liabilities.get_closing_liabilities(int(horizon))
         final_vals = ptf_values[:, final_idx]
@@ -267,7 +271,7 @@ class Portfolio:
     def funded_ratio_avg(self, scenario : str = "base", horizon : float = 30.0):
         s = self.run_scenario(scenario)
         ptf_value = self._get_ptf_value(scenario, horizon=horizon)
-        final_idx = int(round(horizon * s.comp))
+        final_idx = int(round(horizon * s.points_per_year))
         funded_ratios = np.array([self._get_funded_ratio(a, int(horizon)) for a in ptf_value[:, final_idx]])
 
         return np.mean(funded_ratios)
@@ -275,7 +279,7 @@ class Portfolio:
     def funded_ratio_vol(self, scenario : str = "base", horizon : float = 30.0):
         s = self.run_scenario(scenario)
         ptf_value = self._get_ptf_value(scenario, horizon=horizon)
-        final_idx = int(round(horizon * s.comp))
+        final_idx = int(round(horizon * s.points_per_year))
 
         funded_ratios = np.array([self._get_funded_ratio(a, int(horizon)) for a in ptf_value[:, final_idx]])
         return np.std(funded_ratios, ddof=1)
@@ -295,3 +299,22 @@ class Portfolio:
         ptf_value = self._get_ptf_value(scenario, horizon=horizon)
 
         return np.std(ptf_value, ddof=1)
+
+    def get_mean_liq_assets(self, scenario : str = "base", horizon : float | None = None):
+        s = self.run_scenario(scenario)
+        if horizon is None: 
+            index = int(s.horizon * s.points_per_year)
+        else:
+            index = int(s.points_per_year * horizon)
+
+
+        paths = s.get_paths(horizon)
+        assets = list(filter(lambda x : self.asset_alloc.assets[x].liquidity >= 0.8, paths["asset_names"]))
+
+        liquid_assets = self._get_ptf_value(scenario, horizon, assets)
+         
+        return np.mean(liquid_assets[:, index])
+
+        
+
+

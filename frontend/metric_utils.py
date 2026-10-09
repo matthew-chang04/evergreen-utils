@@ -1,3 +1,5 @@
+import html
+
 import streamlit as st
 
 PERCENT_METRICS = {
@@ -40,8 +42,17 @@ def format_metric_delta(label, delta, money_decimals=2):
 
 def get_metric_delta_color(label, delta):
     if label in RISK_UP_IS_BAD:
-        return "inverse"
-    return "normal"
+        if delta > 0:
+            return "bad"
+        if delta < 0:
+            return "good"
+        return "neutral"
+
+    if delta > 0:
+        return "good"
+    if delta < 0:
+        return "bad"
+    return "neutral"
 
 
 def apply_metric_grid_style(label_size="0.7rem", value_size="1.15rem", delta_size="0.7rem"):
@@ -58,6 +69,39 @@ def apply_metric_grid_style(label_size="0.7rem", value_size="1.15rem", delta_siz
             }}
             div[data-testid="stMetricDelta"] {{
                 font-size: {delta_size} !important;
+            }}
+            .metric-grid-card {{
+                display: flex;
+                flex-direction: column;
+                gap: 0.2rem;
+                padding: 0.5rem 0.6rem 0.25rem 0.6rem;
+                border-radius: 0.5rem;
+                background: rgba(15, 23, 42, 0.02);
+                border: 1px solid rgba(148, 163, 184, 0.18);
+            }}
+            .metric-grid-label {{
+                font-size: {label_size} !important;
+                color: rgba(15, 23, 42, 0.82);
+                line-height: 1.35;
+            }}
+            .metric-grid-value {{
+                font-size: {value_size} !important;
+                font-weight: 600;
+                color: rgba(15, 23, 42, 0.96);
+                line-height: 1.25;
+            }}
+            .metric-grid-delta {{
+                font-size: {delta_size} !important;
+                font-weight: 600;
+            }}
+            .metric-grid-delta-good {{
+                color: #16a34a;
+            }}
+            .metric-grid-delta-bad {{
+                color: #dc2626;
+            }}
+            .metric-grid-delta-neutral {{
+                color: #64748b;
             }}
         </style>
         """,
@@ -88,12 +132,26 @@ def render_metric_grid(metric_specs, columns=4, money_decimals=2, compact=False)
 
             delta = value - benchmark_value
             delta_text = format_metric_delta(label, delta, money_decimals=money_decimals)
-            delta_color = get_metric_delta_color(label, delta)
-            st.metric(
-                label,
-                format_metric_value(label, value, money_decimals=money_decimals),
-                delta=delta_text,
-                delta_color=delta_color,
+            delta_state = get_metric_delta_color(label, delta)
+            delta_class = {
+                "good": "metric-grid-delta-good",
+                "bad": "metric-grid-delta-bad",
+                "neutral": "metric-grid-delta-neutral",
+            }[delta_state]
+            st.markdown(
+                """
+                <div class="metric-grid-card">
+                    <div class="metric-grid-label">{label}</div>
+                    <div class="metric-grid-value">{value_text}</div>
+                    <div class="metric-grid-delta {delta_class}">{delta_text}</div>
+                </div>
+                """.format(
+                    label=html.escape(str(label)),
+                    value_text=html.escape(format_metric_value(label, value, money_decimals=money_decimals)),
+                    delta_text=html.escape(str(delta_text)),
+                    delta_class=delta_class,
+                ),
+                unsafe_allow_html=True,
             )
 
         if idx % columns == columns - 1 and idx != len(metric_specs) - 1:
