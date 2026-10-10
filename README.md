@@ -14,7 +14,7 @@ zz
 
 From here, enter the following commands one-by-one:
 ```
-git clone https/////
+git clone https://github.com/matthew-chang04/evergreen-utils
 ```
 
 3. Set up virtual environment:
@@ -44,4 +44,3 @@ streamlit run dashboard.py
 
 When inside the dashboard you will see a few tools:
 1. Strategic Asset Allocation
-2. 
