@@ -5,7 +5,8 @@ zz
 ## Simulated Pension Model
 
 ### Setup
-1. You will need python v3.12.7 or greater: (python install)[https://www.python.org/downloads/]
+1. You will need python v3.12.7 or greater: [python](https://www.python.org/downloads/)
+
 *** Remember to set "Add python.exe to PATH" when installing ***
 
 3. On your computer, open a terminal.
