@@ -1,5 +1,3 @@
-import html
-
 import streamlit as st
 
 PERCENT_METRICS = {
@@ -41,79 +39,18 @@ def format_metric_delta(label, delta, money_decimals=2):
 
 
 def get_metric_delta_color(label, delta):
+    if delta == 0:
+        return "off"
+
     if label in RISK_UP_IS_BAD:
-        if delta > 0:
-            return "bad"
-        if delta < 0:
-            return "good"
-        return "neutral"
+        return "inverse"
 
-    if delta > 0:
-        return "good"
-    if delta < 0:
-        return "bad"
-    return "neutral"
+    return "normal"
 
-
-def apply_metric_grid_style(label_size="0.7rem", value_size="1.15rem", delta_size="0.7rem"):
-    st.markdown(
-        f"""
-        <style>
-            div[data-testid="stMetricLabel"] {{
-                font-size: {label_size} !important;
-                white-space: normal !important;
-            }}
-            div[data-testid="stMetricValue"] {{
-                font-size: {value_size} !important;
-                line-height: 1.25 !important;
-            }}
-            div[data-testid="stMetricDelta"] {{
-                font-size: {delta_size} !important;
-            }}
-            .metric-grid-card {{
-                display: flex;
-                flex-direction: column;
-                gap: 0.2rem;
-                padding: 0.5rem 0.6rem 0.25rem 0.6rem;
-                border-radius: 0.5rem;
-                background: rgba(15, 23, 42, 0.02);
-                border: 1px solid rgba(148, 163, 184, 0.18);
-            }}
-            .metric-grid-label {{
-                font-size: {label_size} !important;
-                color: rgba(15, 23, 42, 0.82);
-                line-height: 1.35;
-            }}
-            .metric-grid-value {{
-                font-size: {value_size} !important;
-                font-weight: 600;
-                color: rgba(15, 23, 42, 0.96);
-                line-height: 1.25;
-            }}
-            .metric-grid-delta {{
-                font-size: {delta_size} !important;
-                font-weight: 600;
-            }}
-            .metric-grid-delta-good {{
-                color: #16a34a;
-            }}
-            .metric-grid-delta-bad {{
-                color: #dc2626;
-            }}
-            .metric-grid-delta-neutral {{
-                color: #64748b;
-            }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
 
 def render_metric_grid(metric_specs, columns=4, money_decimals=2, compact=False):
-    if compact:
-        apply_metric_grid_style(label_size="0.62rem", value_size="1.0rem", delta_size="0.62rem")
-    else:
-        apply_metric_grid_style()
+    del compact
 
     cols = st.columns(columns, gap="small")
     for idx, spec in enumerate(metric_specs):
@@ -126,33 +63,12 @@ def render_metric_grid(metric_specs, columns=4, money_decimals=2, compact=False)
             else:
                 raise ValueError(f"Metric spec must have 2 or 3 items: {spec!r}")
 
+            value_text = format_metric_value(label, value, money_decimals=money_decimals)
             if benchmark_value is None:
-                st.metric(label, format_metric_value(label, value, money_decimals=money_decimals))
+                st.metric(label, value_text)
                 continue
 
             delta = value - benchmark_value
             delta_text = format_metric_delta(label, delta, money_decimals=money_decimals)
-            delta_state = get_metric_delta_color(label, delta)
-            delta_class = {
-                "good": "metric-grid-delta-good",
-                "bad": "metric-grid-delta-bad",
-                "neutral": "metric-grid-delta-neutral",
-            }[delta_state]
-            st.markdown(
-                """
-                <div class="metric-grid-card">
-                    <div class="metric-grid-label">{label}</div>
-                    <div class="metric-grid-value">{value_text}</div>
-                    <div class="metric-grid-delta {delta_class}">{delta_text}</div>
-                </div>
-                """.format(
-                    label=html.escape(str(label)),
-                    value_text=html.escape(format_metric_value(label, value, money_decimals=money_decimals)),
-                    delta_text=html.escape(str(delta_text)),
-                    delta_class=delta_class,
-                ),
-                unsafe_allow_html=True,
-            )
-
-        if idx % columns == columns - 1 and idx != len(metric_specs) - 1:
-            st.markdown("<div style='height: 0.25rem'></div>", unsafe_allow_html=True)
+            delta_color = get_metric_delta_color(label, delta)
+            st.metric(label, value_text, delta=delta_text, delta_color=delta_color)

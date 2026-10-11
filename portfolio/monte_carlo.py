@@ -115,9 +115,7 @@ class MonteCarloSim:
         num_paths = int(num_paths)
         points_per_year = int(points_per_year)
         num_steps = int(round(float(horizon) * points_per_year))
-
-        print(horizon)
-        print(num_steps)
+      
         dt = 1.0 / float(points_per_year)
 
         if seed is not None:
