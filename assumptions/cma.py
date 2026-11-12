@@ -160,31 +160,7 @@ SCENARIO_DELTAS = {
             "infrastructure" : 0.0,
             "private_equity" : 0.0,
         }
-    },
-    "gfc" : {
-        "returns" : {
-            "cash" : 0.0,
-            "fixed_income" : -0.03,
-            "can_equity" : -0.02,
-            "us_equity" : -0.02,
-            "id_equity" : -0.02,
-            "em_equity" : -0.02,
-            "real_estate" : -0.044,
-            "infrastructure" : -0.015,
-            "private_equity" : -0.02,
-        },
-        "std_dev" : {
-            "cash" : 0.0,
-            "fixed_income" : 0.0,
-            "can_equity" : 0.0,
-            "us_equity" : 0.0,
-            "id_equity" : 0.0,
-            "em_equity" : 0.0,
-            "real_estate" : 0.0,
-            "infrastructure" : 0.0,
-            "private_equity" : 0.0,
-        }
-    },
+    }
 }
 
 AUM = 1_000_000_000.0
